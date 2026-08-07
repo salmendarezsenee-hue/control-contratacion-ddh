@@ -241,6 +241,22 @@
   .summary .cell.warn .num{color:var(--warn);}
   .summary .cell.idle .num{color:var(--idle);}
 
+  .sync-row{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:8px 14px;border-bottom:1px solid var(--line-soft);background:#FAFBFC;
+  }
+  .sync-status{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ink-soft);}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:#9AA1AA;flex-shrink:0;}
+  .sync-dot.ok{background:var(--ok);}
+  .sync-dot.err{background:var(--danger);}
+  .btn-refresh{
+    display:inline-flex;align-items:center;gap:5px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:7px;cursor:pointer;
+  }
+  .btn-refresh:hover{border-color:var(--focus);color:var(--focus);}
+  .btn-refresh.spinning .icon{animation:spin .7s linear infinite;}
+  @keyframes spin{ from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
   .search-row{
     padding:10px 14px;
     border-bottom:1px solid var(--line-soft);
@@ -606,6 +622,10 @@
       <div class="brand">
         <div class="sub">Personal de nuevo ingreso</div>
       </div>
+      <div class="sync-row">
+        <span class="sync-status" id="syncStatus"><span class="sync-dot" id="syncDot"></span><span id="syncText">Conectando...</span></span>
+        <button class="btn-refresh" id="btnRefreshList" title="Actualizar"><span data-icon="refresh"></span>Actualizar</button>
+      </div>
 
       <div class="summary" id="summary">
         <div class="cell"><div class="num" id="sumTotal">0</div><div class="lbl">Total</div></div>
@@ -907,8 +927,9 @@
     try{
       var res = await fetch(APPS_SCRIPT_URL + '?action=get&key=' + encodeURIComponent(key));
       var data = await res.json();
+      markOnline(true);
       return (data && data.found) ? data.value : null;
-    }catch(e){ console.error('apiGet', e); return null; }
+    }catch(e){ console.error('apiGet', e); markOnline(false); return null; }
   }
   async function apiSet(key, value){
     try{
@@ -918,8 +939,9 @@
         body: JSON.stringify({ action:'set', key:key, value:value })
       });
       var data = await res.json();
+      markOnline(true);
       return !!(data && data.ok);
-    }catch(e){ console.error('apiSet', e); return false; }
+    }catch(e){ console.error('apiSet', e); markOnline(false); return false; }
   }
   async function apiDelete(key){
     try{
@@ -929,8 +951,9 @@
         body: JSON.stringify({ action:'delete', key:key })
       });
       var data = await res.json();
+      markOnline(true);
       return !!(data && data.ok);
-    }catch(e){ console.error('apiDelete', e); return false; }
+    }catch(e){ console.error('apiDelete', e); markOnline(false); return false; }
   }
   async function apiListKeys(prefix){
     try{
@@ -1000,7 +1023,18 @@
   }
   async function deletePersonStorage(id){ await apiDelete('persona:'+id); }
 
-  async function initData(){
+  var backendOnline = null;
+  function markOnline(ok){ backendOnline = ok; updateSyncStatus(); }
+  function updateSyncStatus(){
+    var dot = document.getElementById('syncDot');
+    var txt = document.getElementById('syncText');
+    if(!dot) return;
+    if(backendOnline === true){ dot.className = 'sync-dot ok'; txt.textContent = 'Sincronizado con Sheets'; }
+    else if(backendOnline === false){ dot.className = 'sync-dot err'; txt.textContent = 'Sin conexión — reintentando'; }
+    else { dot.className = 'sync-dot'; txt.textContent = 'Conectando...'; }
+  }
+
+  async function initData(keepSelection){
     var ids = await loadIndex();
     var valid = [];
     for(var i=0;i<ids.length;i++){
@@ -1009,8 +1043,20 @@
     }
     state.order = valid;
     if(valid.length !== ids.length) await saveIndex(valid);
+    if(state.activeId && !state.people[state.activeId]) state.activeId = null;
     renderList(); renderSummary();
+    if(document.getElementById('view-expedientes').classList.contains('active')) renderMain();
   }
+
+  document.getElementById('btnRefreshList').addEventListener('click', async function(){
+    var btn = document.getElementById('btnRefreshList');
+    btn.classList.add('spinning');
+    btn.disabled = true;
+    await initData(true);
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+    showToast('Lista actualizada');
+  });
 
   // ================= Derived =================
   function progressOf(p){
@@ -2019,6 +2065,7 @@
     document.getElementById('btnImportJson').style.display = isAdmin() ? 'inline-flex' : 'none';
   }
 
+  var autoRefreshTimer = null;
   async function unlockApp(user){
     currentUser = user;
     document.getElementById('lockScreen').style.display = 'none';
@@ -2026,6 +2073,10 @@
     document.getElementById('sessionUserLabel').textContent = user ? ('Sesión: ' + user.nombre + (user.rol==='admin' ? ' (Admin)' : '')) : '';
     applyRolePermissions();
     await initData();
+    if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+    autoRefreshTimer = setInterval(function(){
+      if(document.getElementById('appRoot').style.display === 'flex'){ initData(true); }
+    }, 30000);
   }
 
   async function populateUserSelect(){
@@ -2107,6 +2158,7 @@
 
   document.getElementById('btnLockNow').addEventListener('click', async function(){
     currentUser = null;
+    if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
     document.getElementById('appRoot').style.display = 'none';
     document.getElementById('lockScreen').style.display = 'flex';
     document.getElementById('lockEnterForm').style.display = 'block';
