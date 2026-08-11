@@ -1830,7 +1830,7 @@
     var p = state.people[document.getElementById('memoPersonSelect').value];
     if(!p) return null;
     var genero = p.genero || 'M';
-    var modalidadLabel = { permanente:'Permanente', temporal:'Temporal', interino:'Interino' }[p.modalidad] || 'Permanente';
+    var modalidadLabel = { permanente:'permanente', temporal:'temporal', interino:'interino' }[p.modalidad] || 'permanente';
     var d = {
       nombre: p.nombre || '____________________',
       dni: p.dni || '____-____-______',
@@ -1849,6 +1849,7 @@
       genero: genero
     };
     d.ciudadano = genero === 'F' ? 'Ciudadana' : 'Ciudadano';
+    d.ciudadanoMin = genero === 'F' ? 'ciudadana' : 'ciudadano';
     d.articuloA = genero === 'F' ? 'a la' : 'al';
     d.nombradoForm = genero === 'F' ? 'nombrada' : 'nombrado';
     d.incluirloForm = genero === 'F' ? 'incluirla' : 'incluirlo';
@@ -1864,7 +1865,7 @@
       seg(d.nombre.toUpperCase(), true),
       seg(', con número de identidad '), seg(d.dni, true),
       seg(', al cargo de '), seg(d.cargo.toUpperCase(), true),
-      seg(', dependiente de ' + d.dependencia + ', bajo la modalidad de '), seg(d.modalidad, true),
+      seg(', dependiente de ' + d.dependencia + ', bajo la modalidad de ' + d.modalidad),
     ];
     if(d.salario){ bodySegs1.push(seg(', devengando un salario mensual de ')); bodySegs1.push(seg('L. ' + d.salario, true)); }
     bodySegs1.push(seg(', con efectividad a partir del ')); bodySegs1.push(seg(d.fechaEfectividad, true));
@@ -1879,7 +1880,7 @@
       { type:'pag', text:'PÁG. 1/1' },
       { type:'body', segs: bodySegs1 },
       { type:'body', segs:[
-        seg('Por tanto, se instruye iniciar el proceso de contratación ' + (d.genero==='F'?'de la':'del') + ' ' + d.ciudadano + ' '),
+        seg('Por tanto, se instruye, iniciar el proceso de contratación ' + d.articuloA + ' ' + d.ciudadanoMin + ' '),
         seg(d.nombre.toUpperCase(), true), seg(' conforme a ley.'),
       ]},
       { type:'body', segs:[seg('Atentamente,')] },
@@ -1898,7 +1899,7 @@
       { type:'meta', label:'FECHA:', lines:[d.fechaDDH] },
       { type:'pag', text:'PÁG. 1/1' },
       { type:'body', segs:[
-        seg('Por medio de la presente se le informa que se ha determinado contratar ' + d.articuloA + ' ' + d.ciudadano + ' '),
+        seg('Por medio de la presente se le informa que se ha determinado contratar ' + d.articuloA + ' ' + d.ciudadanoMin + ' '),
         seg(d.nombre.toUpperCase(), true), seg(', con número de identidad '), seg(d.dni, true),
         seg(', al cargo de '), seg(d.cargo.toUpperCase(), true),
         seg(', dependiente de ' + d.dependencia + ', con efectividad a partir de '), seg(d.fechaEfectividad, true),
@@ -1926,7 +1927,7 @@
         seg('Por medio de la presente se le informa que, por instrucciones de la Gerencia General mediante '),
         seg('MEMORANDUM ' + d.numGG, true), seg(', de fecha '), seg(d.fechaGG, true),
         seg(', ha sido ' + d.nombradoForm + ' en el cargo de '), seg(d.cargo.toUpperCase(), true),
-        seg(', dependiente de ' + d.dependencia + ', bajo la modalidad de '), seg(d.modalidad, true),
+        seg(', dependiente de ' + d.dependencia + ', bajo la modalidad de ' + d.modalidad),
         seg(', con efectividad a partir del '), seg(d.fechaEfectividad, true), seg('.'),
       ]},
       { type:'body', segs:[
