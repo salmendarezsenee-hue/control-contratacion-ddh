@@ -955,6 +955,44 @@
       return !!(data && data.ok);
     }catch(e){ console.error('apiDelete', e); markOnline(false); return false; }
   }
+  // Estas tres llaman a una acción atómica en el servidor (con bloqueo), para que agregar o
+  // quitar un expediente del índice compartido sea seguro aunque dos personas lo hagan a la vez.
+  async function apiAddToIndex(key, id){
+    try{
+      var res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'addToIndex', key:key, id:id })
+      });
+      var data = await res.json();
+      markOnline(true);
+      return (data && data.ok) ? data.list : null;
+    }catch(e){ console.error('apiAddToIndex', e); markOnline(false); return null; }
+  }
+  async function apiAddManyToIndex(key, ids){
+    try{
+      var res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'addManyToIndex', key:key, ids:ids })
+      });
+      var data = await res.json();
+      markOnline(true);
+      return (data && data.ok) ? data.list : null;
+    }catch(e){ console.error('apiAddManyToIndex', e); markOnline(false); return null; }
+  }
+  async function apiRemoveFromIndex(key, id){
+    try{
+      var res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'removeFromIndex', key:key, id:id })
+      });
+      var data = await res.json();
+      markOnline(true);
+      return (data && data.ok) ? data.list : null;
+    }catch(e){ console.error('apiRemoveFromIndex', e); markOnline(false); return null; }
+  }
   async function apiListKeys(prefix){
     try{
       var res = await fetch(APPS_SCRIPT_URL + '?action=list&prefix=' + encodeURIComponent(prefix||''));
@@ -1008,6 +1046,30 @@
   async function saveIndex(ids){
     await apiSet('personas-index', JSON.stringify(ids));
   }
+  // Agrega/quita IDs del índice usando una acción atómica del servidor (con bloqueo),
+  // para que no se pisen los cambios cuando dos personas trabajan al mismo tiempo.
+  async function addToIndex(id){
+    var list = await apiAddToIndex('personas-index', id);
+    if(list === null){ list = await loadIndex(); if(list.indexOf(id) === -1) list.push(id); await saveIndex(list); }
+    state.order = list;
+    return list;
+  }
+  async function addManyToIndex(ids){
+    var list = await apiAddManyToIndex('personas-index', ids);
+    if(list === null){
+      list = await loadIndex();
+      ids.forEach(function(id){ if(list.indexOf(id) === -1) list.push(id); });
+      await saveIndex(list);
+    }
+    state.order = list;
+    return list;
+  }
+  async function removeFromIndex(id){
+    var list = await apiRemoveFromIndex('personas-index', id);
+    if(list === null){ list = await loadIndex(); list = list.filter(function(x){ return x !== id; }); await saveIndex(list); }
+    state.order = list;
+    return list;
+  }
   async function loadPerson(id){
     var v = await apiGet('persona:'+id);
     try{ return v ? JSON.parse(v) : null; }catch(e){ return null; }
@@ -1037,12 +1099,23 @@
   async function initData(keepSelection){
     var ids = await loadIndex();
     var valid = [];
+    var missing = [];
     for(var i=0;i<ids.length;i++){
       var p = await loadPerson(ids[i]);
+      if(!p){
+        // Reintenta una vez antes de asumir que realmente no existe —
+        // una falla momentánea de red no debe hacer que el expediente
+        // desaparezca de la lista de todos.
+        await new Promise(function(res){ setTimeout(res, 300); });
+        p = await loadPerson(ids[i]);
+      }
       if(p){ state.people[p.id] = p; valid.push(p.id); }
+      else{ missing.push(ids[i]); valid.push(ids[i]); } // se conserva en el índice por seguridad
     }
     state.order = valid;
-    if(valid.length !== ids.length) await saveIndex(valid);
+    // Ya NO se reescribe el índice automáticamente al detectar faltantes: evita que una
+    // falla momentánea de conexión borre para siempre la referencia a un expediente real.
+    if(missing.length){ console.warn('No se pudieron cargar estos expedientes (se mantienen en la lista):', missing); }
     if(state.activeId && !state.people[state.activeId]) state.activeId = null;
     renderList(); renderSummary();
     if(document.getElementById('view-expedientes').classList.contains('active')) renderMain();
@@ -1078,7 +1151,7 @@
 
   // ================= Sidebar rendering =================
   function renderSummary(){
-    var ids = state.order.filter(function(id){ return !state.people[id].archivado; });
+    var ids = state.order.filter(function(id){ return state.people[id] && !state.people[id].archivado; });
     var total = ids.length, ok=0, warn=0;
     ids.forEach(function(id){ var s = statusOf(state.people[id]); if(s==='ok') ok++; else if(s==='warn') warn++; });
     document.getElementById('sumTotal').textContent = total;
@@ -1089,7 +1162,8 @@
   function renderList(){
     var container = document.getElementById('personList');
     var q = state.filter.trim().toLowerCase();
-    var ids = state.order.slice().sort(function(a,b){ return state.people[b].updatedAt - state.people[a].updatedAt; });
+    var ids = state.order.filter(function(id){ return !!state.people[id]; })
+      .slice().sort(function(a,b){ return state.people[b].updatedAt - state.people[a].updatedAt; });
     var visible = ids.filter(function(id){
       var p = state.people[id];
       if(!state.showArchived && p.archivado) return false;
@@ -1275,8 +1349,7 @@
         if(!confirm('¿Eliminar el expediente de "' + (p.nombre||'esta persona') + '"? Esta acción no se puede deshacer.')) return;
         await deletePersonStorage(p.id);
         delete state.people[p.id];
-        state.order = state.order.filter(function(id){ return id !== p.id; });
-        await saveIndex(state.order);
+        await removeFromIndex(p.id);
         state.activeId = null;
         renderList(); renderSummary(); renderMain();
         showToast('Expediente eliminado');
@@ -1463,14 +1536,15 @@
         var people = Array.isArray(payload) ? payload : payload.people;
         if(!Array.isArray(people)) throw new Error('Formato inválido');
         if(!confirm('Se importarán ' + people.length + ' expediente(s). Los que ya existan (mismo ID) se actualizarán. ¿Continuar?')) return;
+        var newIds = [];
         for(var i=0;i<people.length;i++){
           var p = people[i];
           if(!p.id) p.id = uid();
           state.people[p.id] = p;
-          if(state.order.indexOf(p.id) === -1) state.order.push(p.id);
+          newIds.push(p.id);
           await savePerson(p);
         }
-        await saveIndex(state.order);
+        await addManyToIndex(newIds);
         renderList(); renderSummary();
         showToast(people.length + ' expediente(s) importado(s)');
       }catch(err){
@@ -1508,9 +1582,8 @@
     var depto = document.getElementById('newDepto').value.trim();
     var p = blankPerson(nombre, cargo, depto);
     state.people[p.id] = p;
-    state.order.push(p.id);
-    await saveIndex(state.order);
     await savePerson(p);
+    await addToIndex(p.id);
     state.activeId = p.id;
     backdrop.classList.remove('show');
     renderList(); renderSummary(); renderMain();
