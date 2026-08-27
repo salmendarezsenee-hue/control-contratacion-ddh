@@ -716,10 +716,12 @@
       <div style="padding:16px 18px;overflow-y:auto;">
         <div class="field" style="margin-bottom:14px;">
           <label>Expediente</label>
-          <select id="memoPersonSelect" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px;outline:none;background:var(--bg);">
+          <input type="text" id="memoPersonSearch" list="memoPersonDatalist" placeholder="Escriba parte del nombre para buscar…" autocomplete="off" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px;outline:none;background:var(--bg);">
+          <datalist id="memoPersonDatalist"></datalist>
+          <select id="memoPersonSelect" style="display:none;">
             <option value="">Seleccione una persona…</option>
           </select>
-          <div class="hint" style="font-size:10.5px;color:#8B93A0;margin-top:4px;">Los datos del expediente (nombre, DNI, cargo, jefe inmediato, etc.) se cargan automáticamente. Edítelos en la pestaña Expedientes si faltan.</div>
+          <div class="hint" style="font-size:10.5px;color:#8B93A0;margin-top:4px;">Escriba unas letras del nombre para encontrarlo más rápido. Los datos del expediente (nombre, DNI, cargo, jefe inmediato, etc.) se cargan automáticamente. Edítelos en la pestaña Expedientes si faltan.</div>
         </div>
 
         <h2 class="second" style="font-family:var(--serif);font-size:14px;margin:18px 0 10px 0;padding-bottom:6px;border-bottom:1px solid var(--line-soft);">Fecha de efectividad</h2>
@@ -973,7 +975,7 @@
     AVANCE_ITEMS.forEach(function(it){ avance[it[0]] = { fecha:"", obs:"" }; });
     return {
       id: uid(), nombre: nombre||"", cargo: cargo||"", departamento: depto||"",
-      ubicacionZona: "", ubicacionSubzona: "",
+      ubicacionZona: "", ubicacionSubzona: "", telefono: "",
       numEmpleado: "", fechaIngreso: "", citaExamen: "", fechaInicioLabores: "",
       dni:"", genero:"M", jefeNombre:"", jefeCargo:"", modalidad:"permanente", salario:"",
       docs: docs, cond: cond, avance: avance,
@@ -1300,6 +1302,7 @@
     html += fieldHtml('cargo','Cargo / Puesto', p.cargo);
     html += fieldHtml('departamento','Departamento', p.departamento);
     html += fieldSelectHtml('ubicacionZona','Ubicación de la contratación (Zona)', p.ubicacionZona, ZONA_OPTIONS);
+    html += fieldHtml('telefono','Teléfono', p.telefono);
     if(p.ubicacionZona === 'central'){
       html += fieldSelectHtml('ubicacionSubzona','Subzona (Central)', p.ubicacionSubzona, SUBZONA_OPTIONS);
     }
@@ -1933,21 +1936,57 @@
   function getVal(id){ return document.getElementById(id).value.trim(); }
   function safeName(n){ return (n||'memo').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40) || 'memo'; }
 
+  var memoPersonNameToId = {};
+
   function populateMemoPersonSelect(){
     var sel = document.getElementById('memoPersonSelect');
     var current = sel.value;
     var ids = state.order.filter(function(id){ return state.people[id] && !state.people[id].archivado; })
       .sort(function(a,b){ return (state.people[a].nombre||'').localeCompare(state.people[b].nombre||''); });
+    memoPersonNameToId = {};
     sel.innerHTML = '<option value="">Seleccione una persona…</option>' + ids.map(function(id){
       var p = state.people[id];
-      return '<option value="' + id + '">' + escapeHtml(p.nombre||'Sin nombre') + (p.cargo ? ' — ' + escapeHtml(p.cargo) : '') + '</option>';
+      var label = (p.nombre||'Sin nombre') + (p.cargo ? ' — ' + p.cargo : '');
+      memoPersonNameToId[label] = id;
+      return '<option value="' + id + '">' + escapeHtml(label) + '</option>';
     }).join('');
     if(ids.indexOf(current) !== -1) sel.value = current;
+
+    var datalist = document.getElementById('memoPersonDatalist');
+    if(datalist){
+      datalist.innerHTML = Object.keys(memoPersonNameToId).map(function(label){
+        return '<option value="' + escapeHtml(label) + '"></option>';
+      }).join('');
+    }
+    var searchInp = document.getElementById('memoPersonSearch');
+    if(searchInp){
+      if(sel.value && state.people[sel.value]){
+        var pSel = state.people[sel.value];
+        searchInp.value = (pSel.nombre||'Sin nombre') + (pSel.cargo ? ' — ' + pSel.cargo : '');
+      } else {
+        searchInp.value = '';
+      }
+    }
   }
 
   document.getElementById('memoPersonSelect').addEventListener('change', function(){
     var p = state.people[this.value];
     if(p) document.getElementById('mFechaEfectividad').value = p.fechaInicioLabores || p.fechaIngreso || '';
+  });
+
+  // Búsqueda del expediente por nombre (más fácil de encontrar entre muchos registros): al escribir y
+  // coincidir exactamente con una opción de la lista, se selecciona esa persona en el <select> real
+  // (que sigue existiendo, oculto, para no tocar el resto de la lógica de memorandos).
+  document.getElementById('memoPersonSearch').addEventListener('input', function(){
+    var id = memoPersonNameToId[this.value];
+    var sel = document.getElementById('memoPersonSelect');
+    if(id && sel.value !== id){
+      sel.value = id;
+      sel.dispatchEvent(new Event('change'));
+    } else if(!id && !this.value){
+      sel.value = '';
+      sel.dispatchEvent(new Event('change'));
+    }
   });
 
 
