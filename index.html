@@ -664,6 +664,24 @@
         <button class="btn-report ghost" id="btnRefreshDash"><span data-icon="refresh"></span>Actualizar estadísticas</button>
       </div>
 
+      <div class="chart-card" style="margin-bottom:20px;padding:16px 20px;">
+        <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
+          <div class="field" style="min-width:220px;margin:0;">
+            <label>Filtrar por departamento</label>
+            <select id="filterDepto" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px;outline:none;background:var(--bg);">
+              <option value="">Todos los departamentos</option>
+            </select>
+          </div>
+          <div class="field" style="min-width:220px;margin:0;">
+            <label>Filtrar por zona</label>
+            <select id="filterZona" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px;outline:none;background:var(--bg);">
+              <option value="">Todas las zonas</option>
+            </select>
+          </div>
+          <button class="btn-report ghost" id="btnClearDashFilters" type="button">Limpiar filtros</button>
+        </div>
+      </div>
+
       <div class="dash-grid" id="dashCards"></div>
 
       <div class="chart-row">
@@ -681,7 +699,7 @@
         <h3>Detalle de expedientes</h3>
         <div class="table-wrap">
           <table class="plist">
-            <thead><tr><th>Nombre</th><th>Cargo</th><th>Departamento</th><th>Estado</th><th>Progreso</th><th>Ingreso</th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Cargo</th><th>Departamento</th><th>Zona</th><th>Estado</th><th>Progreso</th><th>Ingreso</th></tr></thead>
             <tbody id="dashTableBody"></tbody>
           </table>
         </div>
@@ -858,6 +876,52 @@
   var MESES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   var MESES_LARGO = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 
+  // ================= Zonas ENEE (ubicación de la nueva contratación) =================
+  var ZONA_OPTIONS = [
+    ['', 'Seleccione...'],
+    ['litoral', 'Litoral Atlántico'],
+    ['noroccidente', 'Noroccidente'],
+    ['cs', 'Centro Sur (C.S.)'],
+    ['central', 'Central'],
+  ];
+  var SUBZONA_OPTIONS = [
+    ['', 'Seleccione...'],
+    ['cajon', 'Cajón'],
+    ['nispero', 'Níspero'],
+    ['canaveral', 'Cañaveral'],
+    ['patuca', 'Patuca'],
+  ];
+  var ZONA_LABELS = { litoral:'Litoral Atlántico', noroccidente:'Noroccidente', cs:'Centro Sur (C.S.)', central:'Central' };
+  var SUBZONA_LABELS = { cajon:'Cajón', nispero:'Níspero', canaveral:'Cañaveral', patuca:'Patuca' };
+  // Devuelve la etiqueta completa de zona de una persona (ej. "Central — Cajón"), o '' si no tiene.
+  function zonaLabelOf(p){
+    if(!p.ubicacionZona) return '';
+    var lbl = ZONA_LABELS[p.ubicacionZona] || '';
+    if(p.ubicacionZona === 'central' && p.ubicacionSubzona){
+      lbl += ' — ' + (SUBZONA_LABELS[p.ubicacionSubzona] || '');
+    }
+    return lbl;
+  }
+  // Lista fija de valores de zona para el filtro de Estadísticas (zona simple o zona+subzona para Central)
+  var ZONA_FILTER_VALUES = [
+    ['litoral', 'Litoral Atlántico'],
+    ['noroccidente', 'Noroccidente'],
+    ['cs', 'Centro Sur (C.S.)'],
+    ['central|cajon', 'Central — Cajón'],
+    ['central|nispero', 'Central — Níspero'],
+    ['central|canaveral', 'Central — Cañaveral'],
+    ['central|patuca', 'Central — Patuca'],
+    ['central|', 'Central — (sin subzona)'],
+  ];
+  function personMatchesZonaFilter(p, filterVal){
+    if(!filterVal) return true;
+    var parts = filterVal.split('|');
+    var zona = parts[0], sub = parts.length > 1 ? parts[1] : null;
+    if(p.ubicacionZona !== zona) return false;
+    if(sub !== null && (p.ubicacionSubzona||'') !== sub) return false;
+    return true;
+  }
+
   // ================= Iconos (SVG en línea, sin dependencias externas) =================
   function svg(inner, w, s){ return '<svg viewBox="0 0 24 24" width="'+(w||16)+'" height="'+(w||16)+'" fill="none" stroke="currentColor" stroke-width="'+(s||1.8)+'" stroke-linecap="round" stroke-linejoin="round" class="icon">'+inner+'</svg>'; }
   var ICONS = {
@@ -909,6 +973,7 @@
     AVANCE_ITEMS.forEach(function(it){ avance[it[0]] = { fecha:"", obs:"" }; });
     return {
       id: uid(), nombre: nombre||"", cargo: cargo||"", departamento: depto||"",
+      ubicacionZona: "", ubicacionSubzona: "",
       numEmpleado: "", fechaIngreso: "", citaExamen: "", fechaInicioLabores: "",
       dni:"", genero:"M", jefeNombre:"", jefeCargo:"", modalidad:"permanente", salario:"",
       docs: docs, cond: cond, avance: avance,
@@ -1145,6 +1210,13 @@
   }
   function statusLabel(s){ return s==='ok'?'Completo':(s==='warn'?'En trámite':'Sin iniciar'); }
   function statusColor(s){ return s==='ok'?'#1E7145':(s==='warn'?'#B4791F':'#9AA1AA'); }
+  // Umbral de declaración jurada de bienes ante el Tribunal Superior de Cuentas (TSC)
+  var TSC_UMBRAL = 40000;
+  function parseSalario(s){
+    if(!s) return 0;
+    var v = String(s).replace(/[^0-9.]/g,'');
+    return parseFloat(v) || 0;
+  }
   function escapeHtml(str){
     return String(str).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
   }
@@ -1227,6 +1299,10 @@
     html += fieldHtml('nombre','Nombre completo', p.nombre, 'full');
     html += fieldHtml('cargo','Cargo / Puesto', p.cargo);
     html += fieldHtml('departamento','Departamento', p.departamento);
+    html += fieldSelectHtml('ubicacionZona','Ubicación de la contratación (Zona)', p.ubicacionZona, ZONA_OPTIONS);
+    if(p.ubicacionZona === 'central'){
+      html += fieldSelectHtml('ubicacionSubzona','Subzona (Central)', p.ubicacionSubzona, SUBZONA_OPTIONS);
+    }
     html += fieldHtml('numEmpleado','N.º de empleado', p.numEmpleado);
     html += fieldHtml('fechaIngreso','Fecha de ingreso', p.fechaIngreso, '', 'date');
     html += fieldHtml('citaExamen','Cita exámen psicométrico', p.citaExamen, '', 'date');
@@ -1311,8 +1387,15 @@
     Array.prototype.forEach.call(main.querySelectorAll('.field-grid input, .field-grid select'), function(inp){
       var evt = inp.tagName === 'SELECT' ? 'change' : 'input';
       inp.addEventListener(evt, function(){
-        p[inp.getAttribute('data-field')] = inp.value;
-        if(inp.getAttribute('data-field') === 'nombre'){ main.querySelector('.file-head h2').textContent = inp.value || 'Sin nombre'; }
+        var field = inp.getAttribute('data-field');
+        p[field] = inp.value;
+        if(field === 'nombre'){ main.querySelector('.file-head h2').textContent = inp.value || 'Sin nombre'; }
+        if(field === 'ubicacionZona'){
+          // La subzona solo aplica a la zona Central; si cambia a otra zona, se limpia.
+          if(inp.value !== 'central') p.ubicacionSubzona = '';
+          savePerson(p).then(function(){ renderMain(); });
+          return;
+        }
         scheduleSave(p);
       });
     });
@@ -1509,14 +1592,15 @@
       var pr = progressOf(p);
       return {
         'Nombre': p.nombre || '', 'Cargo': p.cargo || '', 'Departamento': p.departamento || '',
-        'DNI': p.dni || '', 'N. Empleado': p.numEmpleado || '', 'Fecha ingreso': p.fechaIngreso || '',
+        'Zona': zonaLabelOf(p) || '',
+        'DNI': p.dni || '', 'Salario (L.)': p.salario || '', 'N. Empleado': p.numEmpleado || '', 'Fecha ingreso': p.fechaIngreso || '',
         'Fecha inicio de labores': p.fechaInicioLabores || '',
         'Estado': statusLabel(statusOf(p)), 'Documentos recibidos': pr.done + '/' + pr.total,
         'Jefe inmediato': p.jefeNombre || '', 'Archivado': p.archivado ? 'Sí' : 'No'
       };
     });
     var ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [{wch:26},{wch:22},{wch:22},{wch:16},{wch:12},{wch:13},{wch:16},{wch:13},{wch:16},{wch:22},{wch:10}];
+    ws['!cols'] = [{wch:26},{wch:22},{wch:22},{wch:20},{wch:16},{wch:14},{wch:12},{wch:13},{wch:16},{wch:13},{wch:16},{wch:22},{wch:10}];
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Expedientes');
     XLSX.writeFile(wb, 'Control_Contratacion_' + new Date().toISOString().slice(0,10) + '.xlsx');
@@ -1606,8 +1690,40 @@
   // ================= Dashboard / Estadísticas =================
   function monthKey(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
 
+  // Estado de los filtros de la pestaña Estadísticas (se conserva mientras la página esté abierta)
+  var dashFilters = { depto: '', zona: '' };
+
+  function populateDashFilterOptions(allPeople){
+    var deptoSel = document.getElementById('filterDepto');
+    var zonaSel = document.getElementById('filterZona');
+    if(!deptoSel || !zonaSel) return;
+
+    var deptos = {};
+    allPeople.forEach(function(p){
+      var dep = (p.departamento||'').trim();
+      if(dep) deptos[dep] = true;
+    });
+    var deptoList = Object.keys(deptos).sort(function(a,b){ return a.localeCompare(b); });
+    var currentDepto = dashFilters.depto;
+    deptoSel.innerHTML = '<option value="">Todos los departamentos</option>' +
+      deptoList.map(function(d){ return '<option value="' + escapeHtml(d) + '"' + (d===currentDepto?' selected':'') + '>' + escapeHtml(d) + '</option>'; }).join('');
+    if(deptoList.indexOf(currentDepto) === -1) dashFilters.depto = '';
+
+    var currentZona = dashFilters.zona;
+    zonaSel.innerHTML = '<option value="">Todas las zonas</option>' +
+      ZONA_FILTER_VALUES.map(function(z){ return '<option value="' + z[0] + '"' + (z[0]===currentZona?' selected':'') + '>' + z[1] + '</option>'; }).join('');
+  }
+
   function renderDashboard(){
-    var all = state.order.map(function(id){ return state.people[id]; }).filter(function(p){ return !!p; });
+    var allUnfiltered = state.order.map(function(id){ return state.people[id]; }).filter(function(p){ return !!p; });
+    populateDashFilterOptions(allUnfiltered);
+
+    var all = allUnfiltered.filter(function(p){
+      if(dashFilters.depto && (p.departamento||'').trim() !== dashFilters.depto) return false;
+      if(dashFilters.zona && !personMatchesZonaFilter(p, dashFilters.zona)) return false;
+      return true;
+    });
+
     var active = all.filter(function(p){ return !p.archivado; });
     var archived = all.filter(function(p){ return p.archivado; });
     var ok=0, warn=0, idle=0;
@@ -1671,13 +1787,20 @@
       return '<tr><td>' + escapeHtml(p.nombre||'—') + (p.archivado?' <span class="archived-badge">Archivado</span>':'') + '</td>' +
         '<td>' + escapeHtml(p.cargo||'—') + '</td>' +
         '<td>' + escapeHtml(p.departamento||'—') + '</td>' +
+        '<td>' + escapeHtml(zonaLabelOf(p) || '—') + '</td>' +
         '<td><span class="pill ' + s + '">' + statusLabel(s) + '</span></td>' +
         '<td>' + pr.done + '/' + pr.total + '</td>' +
         '<td>' + (p.fechaIngreso || '—') + '</td></tr>';
     }).join('');
-    document.getElementById('dashTableBody').innerHTML = rows || '<tr><td colspan="6" style="text-align:center;color:var(--ink-soft);padding:20px;">Sin expedientes registrados.</td></tr>';
+    document.getElementById('dashTableBody').innerHTML = rows || '<tr><td colspan="7" style="text-align:center;color:var(--ink-soft);padding:20px;">Sin expedientes registrados (o ninguno coincide con los filtros).</td></tr>';
   }
   document.getElementById('btnRefreshDash').addEventListener('click', renderDashboard);
+  document.getElementById('filterDepto').addEventListener('change', function(){ dashFilters.depto = this.value; renderDashboard(); });
+  document.getElementById('filterZona').addEventListener('change', function(){ dashFilters.zona = this.value; renderDashboard(); });
+  document.getElementById('btnClearDashFilters').addEventListener('click', function(){
+    dashFilters.depto = ''; dashFilters.zona = '';
+    renderDashboard();
+  });
 
   // ================= Reporte para la Directora =================
   function fechaHoyLarga(){
@@ -1691,14 +1814,21 @@
     var ok=0, warn=0, idle=0;
     all.forEach(function(p){ var s = statusOf(p); if(s==='ok') ok++; else if(s==='warn') warn++; else idle++; });
 
+    var tscCount = all.filter(function(p){ return parseSalario(p.salario) > TSC_UMBRAL; }).length;
+
     var rows = all.slice().sort(function(a,b){
       var da = a.fechaInicioLabores || '9999-99-99', db = b.fechaInicioLabores || '9999-99-99';
       if(da !== db) return da < db ? -1 : 1;
       return (a.nombre||'').localeCompare(b.nombre||'');
     }).map(function(p){
       var pr = progressOf(p), s = statusOf(p);
-      return '<tr><td>' + escapeHtml(p.nombre||'—') + '</td><td>' + escapeHtml(p.cargo||'—') + '</td>' +
-        '<td>' + escapeHtml(p.departamento||'—') + '</td><td>' + statusLabel(s) + '</td>' +
+      var salNum = parseSalario(p.salario);
+      var superaTsc = salNum > TSC_UMBRAL;
+      var salarioCell = (p.salario ? 'L. ' + p.salario : '—') + (superaTsc ? ' <b style="color:#A6363C;">(TSC)</b>' : '');
+      return '<tr' + (superaTsc ? ' style="background:#FBF1E1;"' : '') + '><td>' + escapeHtml(p.nombre||'—') + '</td>' +
+        '<td>' + escapeHtml(p.dni||'—') + '</td><td>' + escapeHtml(p.cargo||'—') + '</td>' +
+        '<td>' + escapeHtml(p.departamento||'—') + '</td><td>' + salarioCell + '</td>' +
+        '<td>' + statusLabel(s) + '</td>' +
         '<td>' + pr.done + '/' + pr.total + '</td><td>' + (p.fechaIngreso||'—') + '</td><td>' + (p.fechaInicioLabores||'—') + '</td></tr>';
     }).join('');
 
@@ -1709,8 +1839,9 @@
       + '<p class="report-meta"><b>De:</b> Asistente Profesional, DDH</p>'
       + '<p class="report-meta"><b>Fecha:</b> ' + fechaHoyLarga() + '</p>'
       + '<p style="margin-top:16px;">Se presenta el estado actual del control de contratación de personal de nuevo ingreso, con un total de <b>' + all.length + '</b> expedientes registrados: <b>' + ok + '</b> completos, <b>' + warn + '</b> en trámite y <b>' + idle + '</b> sin iniciar. El listado está ordenado por fecha de inicio de labores.</p>'
-      + '<table><thead><tr><th>Nombre</th><th>Cargo</th><th>Departamento</th><th>Estado</th><th>Documentos</th><th>Fecha de ingreso</th><th>Inicio de labores</th></tr></thead>'
-      + '<tbody>' + (rows || '<tr><td colspan="7">Sin expedientes registrados.</td></tr>') + '</tbody></table>'
+      + '<p>De estos, <b>' + tscCount + '</b> persona(s) devengan un salario superior a <b>L. ' + TSC_UMBRAL.toLocaleString('es-HN') + '.00</b> y, por tanto, deben presentar su declaración jurada de bienes ante el Tribunal Superior de Cuentas (TSC). Se identifican en la tabla con la marca <b style="color:#A6363C;">(TSC)</b>.</p>'
+      + '<table><thead><tr><th>Nombre</th><th>DNI</th><th>Cargo</th><th>Departamento</th><th>Salario (L.)</th><th>Estado</th><th>Documentos</th><th>Fecha de ingreso</th><th>Inicio de labores</th></tr></thead>'
+      + '<tbody>' + (rows || '<tr><td colspan="9">Sin expedientes registrados.</td></tr>') + '</tbody></table>'
       + '<p style="margin-top:26px;">Sin otro particular,</p>'
       + '<p style="margin-top:34px;"><b>_______________________________</b><br>Asistente Profesional — DDH</p>';
   }
@@ -1730,6 +1861,7 @@
     var all = state.order.map(function(id){ return state.people[id]; }).filter(function(p){ return !!p; });
     var ok=0, warn=0, idle=0;
     all.forEach(function(p){ var s = statusOf(p); if(s==='ok') ok++; else if(s==='warn') warn++; else idle++; });
+    var tscCount = all.filter(function(p){ return parseSalario(p.salario) > TSC_UMBRAL; }).length;
 
     var sorted = all.slice().sort(function(a,b){
       var da = a.fechaInicioLabores || '9999-99-99', db = b.fechaInicioLabores || '9999-99-99';
@@ -1737,16 +1869,19 @@
       return (a.nombre||'').localeCompare(b.nombre||'');
     });
 
-    var colWidths = [1750, 1700, 1700, 1000, 900, 900, 888];
-    var headRow = ['Nombre','Cargo','Departamento','Estado','Docs.','Ingreso','Inicio labores'].map(function(h){
+    var colWidths = [1400, 1000, 1300, 1300, 950, 750, 650, 750, 750];
+    var headRow = ['Nombre','DNI','Cargo','Departamento','Salario (L.)','Estado','Docs.','Ingreso','Inicio labores'].map(function(h){
       return oxCell({ text: h, bold: true, shade: 'EEF0F2' });
     });
     var dataRows = sorted.map(function(p){
       var pr = progressOf(p), s = statusOf(p);
+      var superaTsc = parseSalario(p.salario) > TSC_UMBRAL;
       return [
         oxCell({ text: p.nombre||'—', align:'left' }),
+        oxCell({ text: p.dni||'—' }),
         oxCell({ text: p.cargo||'—', align:'left' }),
         oxCell({ text: p.departamento||'—', align:'left' }),
+        oxCell({ text: (p.salario ? 'L. ' + p.salario : '—') + (superaTsc ? ' (TSC)' : ''), bold: superaTsc, shade: superaTsc ? 'FBF1E1' : null }),
         oxCell({ text: statusLabel(s) }),
         oxCell({ text: pr.done + '/' + pr.total }),
         oxCell({ text: p.fechaIngreso||'—' }),
@@ -1754,7 +1889,7 @@
       ];
     });
     if(dataRows.length === 0){
-      dataRows.push([oxCell({ text:'Sin expedientes registrados.', colSpan:7, align:'left' })]);
+      dataRows.push([oxCell({ text:'Sin expedientes registrados.', colSpan:9, align:'left' })]);
     }
     var table = oxTable([headRow].concat(dataRows), colWidths);
 
@@ -1769,6 +1904,9 @@
       runXml(String(ok), { bold: true }) + runXml(' completos, ') +
       runXml(String(warn), { bold: true }) + runXml(' en trámite y ') +
       runXml(String(idle), { bold: true }) + runXml(' sin iniciar. El listado está ordenado por fecha de inicio de labores.'),
+      { align: 'both', after: 200 });
+    out += paraXml(runXml('De estos, ') + runXml(String(tscCount), { bold: true }) +
+      runXml(' persona(s) devengan un salario superior a L. ' + TSC_UMBRAL.toLocaleString('es-HN') + '.00 y, por tanto, deben presentar su declaración jurada de bienes ante el Tribunal Superior de Cuentas (TSC). Se identifican en la tabla con la marca (TSC).'),
       { align: 'both', after: 200 });
     out += table;
     out += paraXml(runXml('Sin otro particular,'), { before: 300, after: 400 });
