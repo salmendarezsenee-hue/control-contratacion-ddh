@@ -900,6 +900,7 @@
     ['nominal', 'Nominal'],
     ['funcional', 'Funcional'],
   ];
+  var TIPO_PUESTO_LABELS = { nominal:'Nominal', funcional:'Funcional' };
   var TIPO_SANGRE_OPTIONS = [
     ['', 'Seleccione...'],
     ['O+', 'O+'], ['O-', 'O-'],
@@ -1847,6 +1848,7 @@
         '<td>' + escapeHtml(p.dni||'—') + '</td><td>' + escapeHtml(p.cargo||'—') + '</td>' +
         '<td>' + escapeHtml(p.departamento||'—') + '</td><td>' + salarioCell + '</td>' +
         '<td>' + escapeHtml(p.telefono||'—') + '</td><td>' + escapeHtml(p.tipoSangre||'—') + '</td>' +
+        '<td>' + escapeHtml(TIPO_PUESTO_LABELS[p.tipoPuesto]||'—') + '</td>' +
         '<td>' + statusLabel(s) + '</td>' +
         '<td>' + pr.done + '/' + pr.total + '</td><td>' + (p.fechaInicioLabores||'—') + '</td></tr>';
     }).join('');
@@ -1859,8 +1861,8 @@
       + '<p class="report-meta"><b>Fecha:</b> ' + fechaHoyLarga() + '</p>'
       + '<p style="margin-top:16px;">Se presenta el estado actual del control de contratación de personal de nuevo ingreso, con un total de <b>' + all.length + '</b> expedientes registrados: <b>' + ok + '</b> completos, <b>' + warn + '</b> en trámite y <b>' + idle + '</b> sin iniciar. El listado está ordenado por fecha de inicio de labores.</p>'
       + '<p>De estos, <b>' + tscCount + '</b> persona(s) devengan un salario igual o superior a <b>L. ' + TSC_UMBRAL.toLocaleString('es-HN') + '.00</b> y, por tanto, deben presentar su declaración jurada de bienes ante el Tribunal Superior de Cuentas (TSC). Se identifican en la tabla con la marca <b style="color:#A6363C;">(TSC)</b>.</p>'
-      + '<table><thead><tr><th>Nombre</th><th>DNI</th><th>Cargo</th><th>Departamento</th><th>Salario (L.)</th><th>Teléfono</th><th>Tipo de sangre</th><th>Estado</th><th>Documentos</th><th>Inicio de labores</th></tr></thead>'
-      + '<tbody>' + (rows || '<tr><td colspan="10">Sin expedientes registrados.</td></tr>') + '</tbody></table>'
+      + '<table><thead><tr><th>Nombre</th><th>DNI</th><th>Cargo</th><th>Departamento</th><th>Salario (L.)</th><th>Teléfono</th><th>Tipo de sangre</th><th>Nominal/Funcional</th><th>Estado</th><th>Documentos</th><th>Inicio de labores</th></tr></thead>'
+      + '<tbody>' + (rows || '<tr><td colspan="11">Sin expedientes registrados.</td></tr>') + '</tbody></table>'
       + '<p style="margin-top:26px;">Sin otro particular,</p>'
       + '<p style="margin-top:34px;"><b>_______________________________</b><br>Asistente Profesional — DDH</p>';
   }
@@ -1888,8 +1890,8 @@
       return (a.nombre||'').localeCompare(b.nombre||'');
     });
 
-    var colWidths = [1250, 900, 1150, 1150, 850, 800, 650, 600, 600, 700];
-    var headRow = ['Nombre','DNI','Cargo','Departamento','Salario (L.)','Teléfono','Tipo sangre','Estado','Docs.','Inicio labores'].map(function(h){
+    var colWidths = [1150, 850, 1050, 1050, 800, 750, 600, 650, 600, 550, 700];
+    var headRow = ['Nombre','DNI','Cargo','Departamento','Salario (L.)','Teléfono','Tipo sangre','Nominal/Func.','Estado','Docs.','Inicio labores'].map(function(h){
       return oxCell({ text: h, bold: true, shade: 'EEF0F2' });
     });
     var dataRows = sorted.map(function(p){
@@ -1903,13 +1905,14 @@
         oxCell({ text: (p.salario ? 'L. ' + p.salario : '—') + (superaTsc ? ' (TSC)' : ''), bold: superaTsc, shade: superaTsc ? 'FBF1E1' : null }),
         oxCell({ text: p.telefono||'—' }),
         oxCell({ text: p.tipoSangre||'—' }),
+        oxCell({ text: TIPO_PUESTO_LABELS[p.tipoPuesto]||'—' }),
         oxCell({ text: statusLabel(s) }),
         oxCell({ text: pr.done + '/' + pr.total }),
         oxCell({ text: p.fechaInicioLabores||'—' }),
       ];
     });
     if(dataRows.length === 0){
-      dataRows.push([oxCell({ text:'Sin expedientes registrados.', colSpan:10, align:'left' })]);
+      dataRows.push([oxCell({ text:'Sin expedientes registrados.', colSpan:11, align:'left' })]);
     }
     var table = oxTable([headRow].concat(dataRows), colWidths);
 
