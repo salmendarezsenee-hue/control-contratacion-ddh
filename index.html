@@ -699,7 +699,7 @@
         <h3>Detalle de expedientes</h3>
         <div class="table-wrap">
           <table class="plist">
-            <thead><tr><th>Nombre</th><th>Cargo</th><th>Departamento</th><th>Zona</th><th>Estado</th><th>Progreso</th><th>Ingreso</th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Cargo</th><th>Departamento</th><th>Zona</th><th>Estado</th><th>Progreso</th><th>Inicio labores</th></tr></thead>
             <tbody id="dashTableBody"></tbody>
           </table>
         </div>
@@ -893,6 +893,20 @@
     ['canaveral', 'Cañaveral'],
     ['patuca', 'Patuca'],
   ];
+  // ================= Tipo de sangre =================
+  // ================= Tipo de puesto =================
+  var TIPO_PUESTO_OPTIONS = [
+    ['', 'Seleccione...'],
+    ['nominal', 'Nominal'],
+    ['funcional', 'Funcional'],
+  ];
+  var TIPO_SANGRE_OPTIONS = [
+    ['', 'Seleccione...'],
+    ['O+', 'O+'], ['O-', 'O-'],
+    ['A+', 'A+'], ['A-', 'A-'],
+    ['B+', 'B+'], ['B-', 'B-'],
+    ['AB+', 'AB+'], ['AB-', 'AB-'],
+  ];
   var ZONA_LABELS = { litoral:'Litoral Atlántico', noroccidente:'Noroccidente', cs:'Centro Sur (C.S.)', central:'Central' };
   var SUBZONA_LABELS = { cajon:'Cajón', nispero:'Níspero', canaveral:'Cañaveral', patuca:'Patuca' };
   // Devuelve la etiqueta completa de zona de una persona (ej. "Central — Cajón"), o '' si no tiene.
@@ -976,7 +990,7 @@
     return {
       id: uid(), nombre: nombre||"", cargo: cargo||"", departamento: depto||"",
       ubicacionZona: "", ubicacionSubzona: "", telefono: "",
-      numEmpleado: "", fechaIngreso: "", citaExamen: "", fechaInicioLabores: "",
+      numEmpleado: "", fechaIngreso: "", citaExamen: "", fechaInicioLabores: "", tipoSangre: "", tipoPuesto: "",
       dni:"", genero:"M", jefeNombre:"", jefeCargo:"", modalidad:"permanente", salario:"",
       docs: docs, cond: cond, avance: avance,
       archivado:false, archivedAt:null, completedAt:null,
@@ -1307,9 +1321,10 @@
       html += fieldSelectHtml('ubicacionSubzona','Subzona (Central)', p.ubicacionSubzona, SUBZONA_OPTIONS);
     }
     html += fieldHtml('numEmpleado','N.º de empleado', p.numEmpleado);
-    html += fieldHtml('fechaIngreso','Fecha de ingreso', p.fechaIngreso, '', 'date');
     html += fieldHtml('citaExamen','Cita exámen psicométrico', p.citaExamen, '', 'date');
     html += fieldHtml('fechaInicioLabores','Fecha de inicio de labores', p.fechaInicioLabores, '', 'date');
+    html += fieldSelectHtml('tipoSangre','Tipo de sangre', p.tipoSangre, TIPO_SANGRE_OPTIONS);
+    html += fieldSelectHtml('tipoPuesto','Puesto nominal o funcional', p.tipoPuesto, TIPO_PUESTO_OPTIONS);
     html += '  </div>';
 
     html += '  <div class="memo-fields-label">Datos para los memorandos</div>';
@@ -1747,7 +1762,7 @@
       '<div class="stat-card idle"><div class="stat-icon">' + ICONS.circleDashed + '</div><div><div class="num">' + idle + '</div><div class="lbl">Sin iniciar</div></div></div>' +
       '<div class="stat-card accent"><div class="stat-icon">' + ICONS.calendarClock + '</div><div><div class="num">' + (avgDays!==null ? avgDays : '—') + '</div><div class="lbl">Días promedio a completar</div></div></div>';
 
-    // Bar chart: por mes (últimos 6 meses, según fechaIngreso o creación)
+    // Bar chart: por mes (últimos 6 meses, según fecha de inicio de labores o creación)
     var now = new Date();
     var months = [];
     for(var i=5;i>=0;i--){
@@ -1757,7 +1772,7 @@
     var counts = {};
     months.forEach(function(m){ counts[m.key] = 0; });
     all.forEach(function(p){
-      var dateSrc = p.fechaIngreso ? new Date(p.fechaIngreso + 'T00:00:00') : new Date(p.createdAt);
+      var dateSrc = p.fechaInicioLabores ? new Date(p.fechaInicioLabores + 'T00:00:00') : new Date(p.createdAt);
       var k = monthKey(dateSrc);
       if(counts.hasOwnProperty(k)) counts[k]++;
     });
@@ -1793,7 +1808,7 @@
         '<td>' + escapeHtml(zonaLabelOf(p) || '—') + '</td>' +
         '<td><span class="pill ' + s + '">' + statusLabel(s) + '</span></td>' +
         '<td>' + pr.done + '/' + pr.total + '</td>' +
-        '<td>' + (p.fechaIngreso || '—') + '</td></tr>';
+        '<td>' + (p.fechaInicioLabores || '—') + '</td></tr>';
     }).join('');
     document.getElementById('dashTableBody').innerHTML = rows || '<tr><td colspan="7" style="text-align:center;color:var(--ink-soft);padding:20px;">Sin expedientes registrados (o ninguno coincide con los filtros).</td></tr>';
   }
@@ -1817,7 +1832,7 @@
     var ok=0, warn=0, idle=0;
     all.forEach(function(p){ var s = statusOf(p); if(s==='ok') ok++; else if(s==='warn') warn++; else idle++; });
 
-    var tscCount = all.filter(function(p){ return parseSalario(p.salario) > TSC_UMBRAL; }).length;
+    var tscCount = all.filter(function(p){ return parseSalario(p.salario) >= TSC_UMBRAL; }).length;
 
     var rows = all.slice().sort(function(a,b){
       var da = a.fechaInicioLabores || '9999-99-99', db = b.fechaInicioLabores || '9999-99-99';
@@ -1826,13 +1841,14 @@
     }).map(function(p){
       var pr = progressOf(p), s = statusOf(p);
       var salNum = parseSalario(p.salario);
-      var superaTsc = salNum > TSC_UMBRAL;
+      var superaTsc = salNum >= TSC_UMBRAL;
       var salarioCell = (p.salario ? 'L. ' + p.salario : '—') + (superaTsc ? ' <b style="color:#A6363C;">(TSC)</b>' : '');
       return '<tr' + (superaTsc ? ' style="background:#FBF1E1;"' : '') + '><td>' + escapeHtml(p.nombre||'—') + '</td>' +
         '<td>' + escapeHtml(p.dni||'—') + '</td><td>' + escapeHtml(p.cargo||'—') + '</td>' +
         '<td>' + escapeHtml(p.departamento||'—') + '</td><td>' + salarioCell + '</td>' +
+        '<td>' + escapeHtml(p.telefono||'—') + '</td><td>' + escapeHtml(p.tipoSangre||'—') + '</td>' +
         '<td>' + statusLabel(s) + '</td>' +
-        '<td>' + pr.done + '/' + pr.total + '</td><td>' + (p.fechaIngreso||'—') + '</td><td>' + (p.fechaInicioLabores||'—') + '</td></tr>';
+        '<td>' + pr.done + '/' + pr.total + '</td><td>' + (p.fechaInicioLabores||'—') + '</td></tr>';
     }).join('');
 
     return ''
@@ -1842,9 +1858,9 @@
       + '<p class="report-meta"><b>De:</b> Asistente Profesional, DDH</p>'
       + '<p class="report-meta"><b>Fecha:</b> ' + fechaHoyLarga() + '</p>'
       + '<p style="margin-top:16px;">Se presenta el estado actual del control de contratación de personal de nuevo ingreso, con un total de <b>' + all.length + '</b> expedientes registrados: <b>' + ok + '</b> completos, <b>' + warn + '</b> en trámite y <b>' + idle + '</b> sin iniciar. El listado está ordenado por fecha de inicio de labores.</p>'
-      + '<p>De estos, <b>' + tscCount + '</b> persona(s) devengan un salario superior a <b>L. ' + TSC_UMBRAL.toLocaleString('es-HN') + '.00</b> y, por tanto, deben presentar su declaración jurada de bienes ante el Tribunal Superior de Cuentas (TSC). Se identifican en la tabla con la marca <b style="color:#A6363C;">(TSC)</b>.</p>'
-      + '<table><thead><tr><th>Nombre</th><th>DNI</th><th>Cargo</th><th>Departamento</th><th>Salario (L.)</th><th>Estado</th><th>Documentos</th><th>Fecha de ingreso</th><th>Inicio de labores</th></tr></thead>'
-      + '<tbody>' + (rows || '<tr><td colspan="9">Sin expedientes registrados.</td></tr>') + '</tbody></table>'
+      + '<p>De estos, <b>' + tscCount + '</b> persona(s) devengan un salario igual o superior a <b>L. ' + TSC_UMBRAL.toLocaleString('es-HN') + '.00</b> y, por tanto, deben presentar su declaración jurada de bienes ante el Tribunal Superior de Cuentas (TSC). Se identifican en la tabla con la marca <b style="color:#A6363C;">(TSC)</b>.</p>'
+      + '<table><thead><tr><th>Nombre</th><th>DNI</th><th>Cargo</th><th>Departamento</th><th>Salario (L.)</th><th>Teléfono</th><th>Tipo de sangre</th><th>Estado</th><th>Documentos</th><th>Inicio de labores</th></tr></thead>'
+      + '<tbody>' + (rows || '<tr><td colspan="10">Sin expedientes registrados.</td></tr>') + '</tbody></table>'
       + '<p style="margin-top:26px;">Sin otro particular,</p>'
       + '<p style="margin-top:34px;"><b>_______________________________</b><br>Asistente Profesional — DDH</p>';
   }
@@ -1864,7 +1880,7 @@
     var all = state.order.map(function(id){ return state.people[id]; }).filter(function(p){ return !!p; });
     var ok=0, warn=0, idle=0;
     all.forEach(function(p){ var s = statusOf(p); if(s==='ok') ok++; else if(s==='warn') warn++; else idle++; });
-    var tscCount = all.filter(function(p){ return parseSalario(p.salario) > TSC_UMBRAL; }).length;
+    var tscCount = all.filter(function(p){ return parseSalario(p.salario) >= TSC_UMBRAL; }).length;
 
     var sorted = all.slice().sort(function(a,b){
       var da = a.fechaInicioLabores || '9999-99-99', db = b.fechaInicioLabores || '9999-99-99';
@@ -1872,27 +1888,28 @@
       return (a.nombre||'').localeCompare(b.nombre||'');
     });
 
-    var colWidths = [1400, 1000, 1300, 1300, 950, 750, 650, 750, 750];
-    var headRow = ['Nombre','DNI','Cargo','Departamento','Salario (L.)','Estado','Docs.','Ingreso','Inicio labores'].map(function(h){
+    var colWidths = [1250, 900, 1150, 1150, 850, 800, 650, 600, 600, 700];
+    var headRow = ['Nombre','DNI','Cargo','Departamento','Salario (L.)','Teléfono','Tipo sangre','Estado','Docs.','Inicio labores'].map(function(h){
       return oxCell({ text: h, bold: true, shade: 'EEF0F2' });
     });
     var dataRows = sorted.map(function(p){
       var pr = progressOf(p), s = statusOf(p);
-      var superaTsc = parseSalario(p.salario) > TSC_UMBRAL;
+      var superaTsc = parseSalario(p.salario) >= TSC_UMBRAL;
       return [
         oxCell({ text: p.nombre||'—', align:'left' }),
         oxCell({ text: p.dni||'—' }),
         oxCell({ text: p.cargo||'—', align:'left' }),
         oxCell({ text: p.departamento||'—', align:'left' }),
         oxCell({ text: (p.salario ? 'L. ' + p.salario : '—') + (superaTsc ? ' (TSC)' : ''), bold: superaTsc, shade: superaTsc ? 'FBF1E1' : null }),
+        oxCell({ text: p.telefono||'—' }),
+        oxCell({ text: p.tipoSangre||'—' }),
         oxCell({ text: statusLabel(s) }),
         oxCell({ text: pr.done + '/' + pr.total }),
-        oxCell({ text: p.fechaIngreso||'—' }),
         oxCell({ text: p.fechaInicioLabores||'—' }),
       ];
     });
     if(dataRows.length === 0){
-      dataRows.push([oxCell({ text:'Sin expedientes registrados.', colSpan:9, align:'left' })]);
+      dataRows.push([oxCell({ text:'Sin expedientes registrados.', colSpan:10, align:'left' })]);
     }
     var table = oxTable([headRow].concat(dataRows), colWidths);
 
@@ -1909,7 +1926,7 @@
       runXml(String(idle), { bold: true }) + runXml(' sin iniciar. El listado está ordenado por fecha de inicio de labores.'),
       { align: 'both', after: 200 });
     out += paraXml(runXml('De estos, ') + runXml(String(tscCount), { bold: true }) +
-      runXml(' persona(s) devengan un salario superior a L. ' + TSC_UMBRAL.toLocaleString('es-HN') + '.00 y, por tanto, deben presentar su declaración jurada de bienes ante el Tribunal Superior de Cuentas (TSC). Se identifican en la tabla con la marca (TSC).'),
+      runXml(' persona(s) devengan un salario igual o superior a L. ' + TSC_UMBRAL.toLocaleString('es-HN') + '.00 y, por tanto, deben presentar su declaración jurada de bienes ante el Tribunal Superior de Cuentas (TSC). Se identifican en la tabla con la marca (TSC).'),
       { align: 'both', after: 200 });
     out += table;
     out += paraXml(runXml('Sin otro particular,'), { before: 300, after: 400 });
